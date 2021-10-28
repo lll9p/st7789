@@ -2,16 +2,17 @@
 //! Batch the pixels to be rendered into Pixel Rows and Pixel Blocks (contiguous Pixel Rows).
 //! This enables the pixels to be rendered efficiently as Pixel Blocks, which may be transmitted in a single Non-Blocking SPI request.
 use crate::{Error, ST7789};
-use display_interface::WriteOnlyDataCommand;
+// use display_interface::WriteOnlyDataCommand;
 use embedded_graphics_core::{
     pixelcolor::{raw::RawU16, Rgb565},
     prelude::*,
 };
-use embedded_hal::digital::v2::OutputPin;
+use embedded_hal::digital::blocking::OutputPin;
+use embedded_hal::spi::blocking as spi;
 
 pub trait DrawBatch<DI, OUT, T, PinE>
 where
-    DI: WriteOnlyDataCommand,
+    DI: spi::Write<u8>,
     OUT: OutputPin<Error = PinE>,
     T: IntoIterator<Item = Pixel<Rgb565>>,
 {
@@ -20,7 +21,7 @@ where
 
 impl<DI, OUT, T, PinE> DrawBatch<DI, OUT, T, PinE> for ST7789<DI, OUT>
 where
-    DI: WriteOnlyDataCommand,
+    DI: spi::Write<u8>,
     OUT: OutputPin<Error = PinE>,
     T: IntoIterator<Item = Pixel<Rgb565>>,
 {

@@ -3,7 +3,7 @@ name = "st7789"
 description = "ST7789 TFT LCD driver with embedded-graphics support"
 version = "0.6.1"
 authors = ["Ales Katona <almindor@gmail.com>", "Paul Sajna <sajattack@gmail.com>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 repository = "https://github.com/almindor/st7789"
 keywords = ["embedded-hal-driver", "st7789", "display"]
@@ -11,9 +11,15 @@ readme = "README.md"
 documentation = "https://docs.rs/st7789"
 
 [dependencies]
-display-interface = "0.4"
-embedded-hal = "0.2"
+# display-interface = "0.4"
+byte-slice-cast = "*"
+# embedded-hal = "0.2"
 nb = "1.0"
+# embedded-graphics ="*"
+embedded-hal="1.0.0-alpha.5"
+num = "*"
+num-derive = "*"
+num-traits = "*"
 
 [dependencies.embedded-graphics-core]
 optional = true

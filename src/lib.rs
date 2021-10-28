@@ -9,31 +9,55 @@ pub mod instruction;
 use crate::instruction::Instruction;
 use core::iter::once;
 
-use display_interface::DataFormat::{U16BEIter, U8Iter};
-use display_interface::WriteOnlyDataCommand;
-use embedded_hal::blocking::delay::DelayUs;
-use embedded_hal::digital::v2::OutputPin;
-
+/* use display_interface::DataFormat::{U16BEIter, U8Iter};
+use display_interface::WriteOnlyDataCommand; */
+use embedded_hal::delay::blocking::DelayUs;
+use embedded_hal::digital::blocking::OutputPin;
+use embedded_hal::spi::blocking as spi;
 #[cfg(feature = "graphics")]
 mod graphics;
 
 #[cfg(feature = "batch")]
 mod batch;
 
+/// DI specific data format wrapper around slices of various widths
+/// Display drivers need to implement non-trivial conversions (e.g. with padding)
+/// as the hardware requires.
+#[non_exhaustive]
+pub enum DataFormat<'a> {
+    /// Slice of unsigned bytes
+    U8(&'a [u8]),
+    /// Slice of unsigned 16bit values with the same endianess as the system, not recommended
+    U16(&'a [u16]),
+    /// Slice of unsigned 16bit values to be sent in big endian byte order
+    U16BE(&'a mut [u16]),
+    /// Slice of unsigned 16bit values to be sent in little endian byte order
+    U16LE(&'a mut [u16]),
+    /// Iterator over unsigned bytes
+    U8Iter(&'a mut dyn Iterator<Item = u8>),
+    /// Iterator over unsigned 16bit values to be sent in big endian byte order
+    U16BEIter(&'a mut dyn Iterator<Item = u16>),
+    /// Iterator over unsigned 16bit values to be sent in little endian byte order
+    U16LEIter(&'a mut dyn Iterator<Item = u16>),
+}
 ///
 /// ST7789 driver to connect to TFT displays.
 ///
-pub struct ST7789<DI, OUT>
+// pub struct ST7789<DI, OUT>
+pub struct ST7789<SPI, OUT>
 where
-    DI: WriteOnlyDataCommand,
+    SPI: spi::Write<u8>,
+    // DI: WriteOnlyDataCommand,
     OUT: OutputPin,
 {
     // Display interface
-    di: DI,
+    di: SPI,
     // Reset pin.
     rst: Option<OUT>,
     // Backlight pin,
     bl: Option<OUT>,
+    // Data pin,
+    dc: Option<OUT>,
     // Visible size (x, y)
     size_x: u16,
     size_y: u16,
@@ -81,15 +105,133 @@ pub enum BacklightState {
 ///
 /// An error holding its source (pins or SPI)
 ///
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum Error<PinE> {
     DisplayError,
     Pin(PinE),
 }
 
-impl<DI, OUT, PinE> ST7789<DI, OUT>
+/// A ubiquitous error type for all kinds of problems which could happen when communicating with a
+/// display
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub enum DisplayError {
+    /// Invalid data format selected for interface selected
+    InvalidFormatError,
+    /// Unable to write to bus
+    BusWriteError,
+    /// Unable to assert or de-assert data/command switching signal
+    DCError,
+    /// Unable to assert chip select signal
+    CSError,
+    /// The requested DataFormat is not implemented by this display interface implementation
+    DataFormatNotImplemented,
+    /// Unable to assert or de-assert reset signal
+    RSError,
+    /// Attempted to write to a non-existing pixel outside the display's bounds
+    OutOfBoundsError,
+}
+type Result_ = core::result::Result<(), DisplayError>;
+
+fn send_u8<SPI: spi::Write<u8>>(spi: &mut SPI, words: DataFormat<'_>) -> Result_ {
+    match words {
+        DataFormat::U8(slice) => spi.write(slice).map_err(|_| DisplayError::BusWriteError),
+        DataFormat::U16(slice) => {
+            use byte_slice_cast::*;
+            spi.write(slice.as_byte_slice())
+                .map_err(|_| DisplayError::BusWriteError)
+        }
+        DataFormat::U16LE(slice) => {
+            use byte_slice_cast::*;
+            for v in slice.as_mut() {
+                *v = v.to_le();
+            }
+            spi.write(slice.as_byte_slice())
+                .map_err(|_| DisplayError::BusWriteError)
+        }
+        DataFormat::U16BE(slice) => {
+            use byte_slice_cast::*;
+            for v in slice.as_mut() {
+                *v = v.to_be();
+            }
+            spi.write(slice.as_byte_slice())
+                .map_err(|_| DisplayError::BusWriteError)
+        }
+        DataFormat::U8Iter(iter) => {
+            let mut buf = [0; 32];
+            let mut i = 0;
+
+            for v in iter.into_iter() {
+                buf[i] = v;
+                i += 1;
+
+                if i == buf.len() {
+                    spi.write(&buf).map_err(|_| DisplayError::BusWriteError)?;
+                    i = 0;
+                }
+            }
+
+            if i > 0 {
+                spi.write(&buf[..i])
+                    .map_err(|_| DisplayError::BusWriteError)?;
+            }
+
+            Ok(())
+        }
+        DataFormat::U16LEIter(iter) => {
+            use byte_slice_cast::*;
+            let mut buf = [0; 32];
+            let mut i = 0;
+
+            for v in iter.map(u16::to_le) {
+                buf[i] = v;
+                i += 1;
+
+                if i == buf.len() {
+                    spi.write(&buf.as_byte_slice())
+                        .map_err(|_| DisplayError::BusWriteError)?;
+                    i = 0;
+                }
+            }
+
+            if i > 0 {
+                spi.write(&buf[..i].as_byte_slice())
+                    .map_err(|_| DisplayError::BusWriteError)?;
+            }
+
+            Ok(())
+        }
+        DataFormat::U16BEIter(iter) => {
+            use byte_slice_cast::*;
+            let mut buf = [0; 64];
+            let mut i = 0;
+            let len = buf.len();
+
+            for v in iter.map(u16::to_be) {
+                buf[i] = v;
+                i += 1;
+
+                if i == len {
+                    spi.write(&buf.as_byte_slice())
+                        .map_err(|_| DisplayError::BusWriteError)?;
+                    i = 0;
+                }
+            }
+
+            if i > 0 {
+                spi.write(&buf[..i].as_byte_slice())
+                    .map_err(|_| DisplayError::BusWriteError)?;
+            }
+
+            Ok(())
+        }
+        _ => Err(DisplayError::DataFormatNotImplemented),
+    }
+}
+impl<SPI, OUT, PinE> ST7789<SPI, OUT>
 where
-    DI: WriteOnlyDataCommand,
+    SPI: spi::Write<u8>,
     OUT: OutputPin<Error = PinE>,
 {
     ///
@@ -103,11 +245,19 @@ where
     /// * `size_x` - x axis resolution of the display in pixels
     /// * `size_y` - y axis resolution of the display in pixels
     ///
-    pub fn new(di: DI, rst: Option<OUT>, bl: Option<OUT>, size_x: u16, size_y: u16) -> Self {
+    pub fn new(
+        di: SPI,
+        rst: Option<OUT>,
+        bl: Option<OUT>,
+        dc: Option<OUT>,
+        size_x: u16,
+        size_y: u16,
+    ) -> Self {
         Self {
             di,
             rst,
             bl,
+            dc,
             size_x,
             size_y,
             orientation: Orientation::default(),
@@ -213,8 +363,7 @@ where
     pub fn set_pixel(&mut self, x: u16, y: u16, color: u16) -> Result<(), Error<PinE>> {
         self.set_address_window(x, y, x, y)?;
         self.write_command(Instruction::RAMWR)?;
-        self.di
-            .send_data(U16BEIter(&mut once(color)))
+        self.send_data(DataFormat::U16BEIter(&mut once(color)))
             .map_err(|_| Error::DisplayError)?;
 
         Ok(())
@@ -244,8 +393,7 @@ where
     {
         self.set_address_window(sx, sy, ex, ey)?;
         self.write_command(Instruction::RAMWR)?;
-        self.di
-            .send_data(U16BEIter(&mut colors.into_iter()))
+        self.send_data(DataFormat::U16BEIter(&mut colors.into_iter()))
             .map_err(|_| Error::DisplayError)
     }
 
@@ -264,23 +412,39 @@ where
     /// Release resources allocated to this driver back.
     /// This returns the display interface and the RST pin deconstructing the driver.
     ///
-    pub fn release(self) -> (DI, Option<OUT>, Option<OUT>) {
+    pub fn release(self) -> (SPI, Option<OUT>, Option<OUT>) {
         (self.di, self.rst, self.bl)
     }
 
     fn write_command(&mut self, command: Instruction) -> Result<(), Error<PinE>> {
-        self.di
-            .send_commands(U8Iter(&mut once(command as u8)))
+        self.send_commands(DataFormat::U8Iter(&mut once(command as u8)))
             .map_err(|_| Error::DisplayError)?;
         Ok(())
     }
 
     fn write_data(&mut self, data: &[u8]) -> Result<(), Error<PinE>> {
-        self.di
-            .send_data(U8Iter(&mut data.iter().cloned()))
+        self.send_data(DataFormat::U8Iter(&mut data.iter().cloned()))
             .map_err(|_| Error::DisplayError)
     }
+    fn send_commands(&mut self, cmds: DataFormat<'_>) -> Result_ {
+        // 1 = data, 0 = command
+        if let Some(dc) = self.dc.as_mut() {
+            dc.set_low().map_err(|_| DisplayError::DCError)?;
+        }
 
+        // Send words over SPI
+        send_u8(&mut self.di, cmds)
+    }
+
+    fn send_data(&mut self, buf: DataFormat<'_>) -> Result_ {
+        // 1 = data, 0 = command
+        if let Some(dc) = self.dc.as_mut() {
+            dc.set_high().map_err(|_| DisplayError::DCError)?;
+        }
+
+        // Send words over SPI
+        send_u8(&mut self.di, buf)
+    }
     // Sets the address window for the display.
     fn set_address_window(
         &mut self,
