@@ -11,23 +11,17 @@ readme = "README.md"
 documentation = "https://docs.rs/st7789"
 
 [dependencies]
-# display-interface = "0.4"
 byte-slice-cast = "*"
-# embedded-hal = "0.2"
-nb = "1.0"
-# embedded-graphics ="*"
+nb = "*"
 embedded-hal="1.0.0-alpha.5"
-num = "*"
-num-derive = "*"
-num-traits = "*"
 
 [dependencies.embedded-graphics-core]
 optional = true
-version = "0.3.2"
+version = "*"
 
 [dependencies.heapless]
 optional = true
-version = "0.7"
+version = "*"
 
 [features]
 default = ["graphics", "batch"]

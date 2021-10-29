@@ -12,9 +12,9 @@ use crate::{Error, Orientation, ST7789};
 // use display_interface::WriteOnlyDataCommand;
 use embedded_hal::spi::blocking as spi;
 
-impl<DI, OUT, PinE> ST7789<DI, OUT>
+impl<SPI, OUT, PinE> ST7789<SPI, OUT>
 where
-    DI: spi::Write<u8>,
+    SPI: spi::Write<u8>,
     OUT: OutputPin<Error = PinE>,
 {
     /// Returns the bounding box for the entire framebuffer.
@@ -28,10 +28,9 @@ where
     }
 }
 
-impl<DI, OUT, PinE> DrawTarget for ST7789<DI, OUT>
+impl<SPI, OUT, PinE> DrawTarget for ST7789<SPI, OUT>
 where
-    DI: spi::Write<u8>,
-    // DI: WriteOnlyDataCommand,
+    SPI: spi::Write<u8>,
     OUT: OutputPin<Error = PinE>,
 {
     type Error = Error<PinE>;
@@ -130,10 +129,9 @@ where
     }
 }
 
-impl<DI, OUT, PinE> OriginDimensions for ST7789<DI, OUT>
+impl<SPI, OUT, PinE> OriginDimensions for ST7789<SPI, OUT>
 where
-    // DI: WriteOnlyDataCommand,
-    DI: spi::Write<u8>,
+    SPI: spi::Write<u8>,
     OUT: OutputPin<Error = PinE>,
 {
     fn size(&self) -> Size {
