@@ -6,8 +6,8 @@ use embedded_graphics_core::{
     pixelcolor::{raw::RawU16, Rgb565},
     prelude::*,
 };
-use embedded_hal::digital::blocking::OutputPin;
-use embedded_hal::spi::blocking as spi;
+use embedded_hal::blocking::spi;
+use embedded_hal::digital::v2::OutputPin;
 
 pub trait DrawBatch<SPI, OUT, T, PinE>
 where

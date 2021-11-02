@@ -2,28 +2,40 @@
 name = "st7789"
 description = "ST7789 TFT LCD driver with embedded-graphics support"
 version = "0.6.1"
-authors = ["Ales Katona <almindor@gmail.com>", "Paul Sajna <sajattack@gmail.com>"]
+authors = ["Ales Katona <almindor@gmail.com>", "Paul Sajna <sajattack@gmail.com>","Lao Lilin <lll9p.china@gmail.com>"]
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/almindor/st7789"
+repository = "https://github.com/lll9p/st7789"
 keywords = ["embedded-hal-driver", "st7789", "display"]
 readme = "README.md"
 documentation = "https://docs.rs/st7789"
 
 [dependencies]
-byte-slice-cast = "*"
-nb = "*"
-embedded-hal="1.0.0-alpha.5"
+byte-slice-cast = "1.2.0"
+nb = "1.0"
+embedded-hal = "0.2.6"
 
 [dependencies.embedded-graphics-core]
 optional = true
-version = "*"
+version = "0.3.3"
 
 [dependencies.heapless]
 optional = true
-version = "*"
+version = "0.7.7"
 
 [features]
 default = ["graphics", "batch"]
 graphics = ["embedded-graphics-core"]
 batch = ["heapless", "graphics"]
+
+[dev-dependencies]
+linux-embedded-hal = "0.3.2"
+rppal = { version="0.13.1", features=["hal"] }
+embedded-graphics ="0.7.1"
+local-ip-address = "0.4.4"
+spin_sleep ="1.0"
+
+[profile.release]
+opt-level = "z" # Optimize for size.
+lto = true
+codegen-units = 1

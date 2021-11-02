@@ -37,6 +37,7 @@ pub enum Instruction {
     PVGAMCTRL = 0xE0,
     NVGAMCTRL = 0xE1,
 }
+
 /// DI specific data format wrapper around slices of various widths
 /// Display drivers need to implement non-trivial conversions (e.g. with padding)
 /// as the hardware requires.
@@ -57,6 +58,7 @@ pub enum DataFormat<'a> {
     /// Iterator over unsigned 16bit values to be sent in little endian byte order
     U16LEIter(&'a mut dyn Iterator<Item = u16>),
 }
+
 ///
 /// Display orientation.
 ///
@@ -108,7 +110,7 @@ pub enum Error<PinE> {
 /// display
 #[derive(Clone, Debug)]
 #[non_exhaustive]
-pub enum DisplayError {
+pub enum SpiError {
     /// Invalid data format selected for interface selected
     InvalidFormatError,
     /// Unable to write to bus

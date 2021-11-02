@@ -6,11 +6,11 @@ use embedded_graphics_core::{
 };
 use embedded_graphics_core::{prelude::OriginDimensions, Pixel};
 
-use embedded_hal::digital::blocking::OutputPin;
+use embedded_hal::digital::v2::OutputPin;
 
 use crate::{Error, Orientation, ST7789};
 // use display_interface::WriteOnlyDataCommand;
-use embedded_hal::spi::blocking as spi;
+use embedded_hal::blocking::spi;
 
 impl<SPI, OUT, PinE> ST7789<SPI, OUT>
 where

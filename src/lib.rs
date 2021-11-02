@@ -7,13 +7,13 @@
 pub mod enums;
 
 pub use crate::enums::{
-    BacklightState, DataFormat, DisplayError, Error, Instruction, Orientation, TearingEffect,
+    BacklightState, DataFormat, Error, Instruction, Orientation, SpiError, TearingEffect,
 };
 use core::iter::once;
 
-use embedded_hal::delay::blocking::DelayUs;
-use embedded_hal::digital::blocking::OutputPin;
-use embedded_hal::spi::blocking as spi;
+use embedded_hal::blocking::delay::DelayUs;
+use embedded_hal::blocking::spi;
+use embedded_hal::digital::v2::OutputPin;
 #[cfg(feature = "graphics")]
 mod graphics;
 
@@ -44,103 +44,8 @@ where
     orientation: Orientation,
 }
 
-type Result_ = core::result::Result<(), DisplayError>;
+// type Result_ = core::result::Result<(), DisplayError>;
 
-fn send_u8<SPI: spi::Write<u8>>(spi: &mut SPI, words: DataFormat<'_>) -> Result_ {
-    match words {
-        DataFormat::U8(slice) => spi.write(slice).map_err(|_| DisplayError::BusWriteError),
-        DataFormat::U16(slice) => {
-            use byte_slice_cast::*;
-            spi.write(slice.as_byte_slice())
-                .map_err(|_| DisplayError::BusWriteError)
-        }
-        DataFormat::U16LE(slice) => {
-            use byte_slice_cast::*;
-            for v in slice.as_mut() {
-                *v = v.to_le();
-            }
-            spi.write(slice.as_byte_slice())
-                .map_err(|_| DisplayError::BusWriteError)
-        }
-        DataFormat::U16BE(slice) => {
-            use byte_slice_cast::*;
-            for v in slice.as_mut() {
-                *v = v.to_be();
-            }
-            spi.write(slice.as_byte_slice())
-                .map_err(|_| DisplayError::BusWriteError)
-        }
-        DataFormat::U8Iter(iter) => {
-            let mut buf = [0; 32];
-            let mut i = 0;
-
-            for v in iter.into_iter() {
-                buf[i] = v;
-                i += 1;
-
-                if i == buf.len() {
-                    spi.write(&buf).map_err(|_| DisplayError::BusWriteError)?;
-                    i = 0;
-                }
-            }
-
-            if i > 0 {
-                spi.write(&buf[..i])
-                    .map_err(|_| DisplayError::BusWriteError)?;
-            }
-
-            Ok(())
-        }
-        DataFormat::U16LEIter(iter) => {
-            use byte_slice_cast::*;
-            let mut buf = [0; 32];
-            let mut i = 0;
-
-            for v in iter.map(u16::to_le) {
-                buf[i] = v;
-                i += 1;
-
-                if i == buf.len() {
-                    spi.write(&buf.as_byte_slice())
-                        .map_err(|_| DisplayError::BusWriteError)?;
-                    i = 0;
-                }
-            }
-
-            if i > 0 {
-                spi.write(&buf[..i].as_byte_slice())
-                    .map_err(|_| DisplayError::BusWriteError)?;
-            }
-
-            Ok(())
-        }
-        DataFormat::U16BEIter(iter) => {
-            use byte_slice_cast::*;
-            let mut buf = [0; 64];
-            let mut i = 0;
-            let len = buf.len();
-
-            for v in iter.map(u16::to_be) {
-                buf[i] = v;
-                i += 1;
-
-                if i == len {
-                    spi.write(&buf.as_byte_slice())
-                        .map_err(|_| DisplayError::BusWriteError)?;
-                    i = 0;
-                }
-            }
-
-            if i > 0 {
-                spi.write(&buf[..i].as_byte_slice())
-                    .map_err(|_| DisplayError::BusWriteError)?;
-            }
-
-            Ok(())
-        }
-        _ => Err(DisplayError::DataFormatNotImplemented),
-    }
-}
 impl<SPI, OUT, PinE> ST7789<SPI, OUT>
 where
     SPI: spi::Write<u8>,
@@ -162,7 +67,7 @@ where
         rst: Option<OUT>,
         bl: Option<OUT>,
         dc: Option<OUT>,
-        cs: Option<OUT>,
+        // cs: Option<OUT>,
         size_x: u16,
         size_y: u16,
     ) -> Self {
@@ -171,7 +76,7 @@ where
             rst,
             bl,
             dc,
-            cs,
+            cs: None,
             size_x,
             size_y,
             orientation: Orientation::default(),
@@ -189,16 +94,16 @@ where
         self.hard_reset(delay_source)?;
         if let Some(bl) = self.bl.as_mut() {
             bl.set_low().map_err(Error::Pin)?;
-            delay_source.delay_us(10_000).unwrap();
+            delay_source.delay_us(10_000);
             bl.set_high().map_err(Error::Pin)?;
         }
 
         self.write_command(Instruction::SWRESET)?; // reset display
-        delay_source.delay_us(150_000).unwrap();
+        delay_source.delay_us(150_000);
         self.write_command(Instruction::RAMWR)?; // Init ram
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::SLPOUT)?; // turn off sleep
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::INVOFF)?; // turn off invert
         self.write_command(Instruction::VSCRDER)?; // vertical scroll definition
         self.write_data(&[0u8, 0u8, 0x14u8, 0u8, 0u8, 0u8])?; // 0 TSA, 320 VSA, 0 BSA
@@ -207,54 +112,54 @@ where
         self.write_command(Instruction::COLMOD)?; // 16bit 65k colors
         self.write_data(&[0b0101_0101])?;
         self.write_command(Instruction::INVON)?; // hack?
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::NORON)?; // turn on display
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::DISPON)?; // turn on display
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::PORCTRL)?; // porch control
         self.write_data(&[0x0Cu8, 0x0Cu8, 0x00u8, 0x33u8, 0x33u8])?;
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::GCTRL)?; // gate control
         self.write_data(&[0x35u8])?;
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::VCOMS)?; // VCOM Setting
         self.write_data(&[0x37u8])?;
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::LCMCTRL)?; // LCM Control
         self.write_data(&[0x2Cu8])?;
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::VDVVRHEN)?; // VDV and VRH Command Enable
         self.write_data(&[0x01u8])?;
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::VRHS)?; // VRH set
         self.write_data(&[0x12u8])?;
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::VDVS)?; // VDV SET
         self.write_data(&[0x20u8])?;
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::FRCTRL2)?; // Frame Rate Control in Normal Mode
         self.write_data(&[0x0Fu8])?;
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::PWCTRL1)?; // Power Control 1
         self.write_data(&[0xA4u8, 0xA1u8])?;
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::PVGAMCTRL)?; // Positive Voltage Gamma Control
         self.write_data(&[
             0xD0u8, 0x04u8, 0x0Du8, 0x11u8, 0x13u8, 0x2Bu8, 0x3Fu8, 0x54u8, 0x4Cu8, 0x18u8, 0x0Du8,
             0x0Bu8, 0x1Fu8, 0x23u8,
         ])?;
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::NVGAMCTRL)?; // Negative Voltage Gamma Control
         self.write_data(&[
             0xD0u8, 0x04u8, 0x0Cu8, 0x11u8, 0x13u8, 0x2Cu8, 0x3Fu8, 0x44u8, 0x51u8, 0x2Fu8, 0x1Fu8,
             0x1Fu8, 0x20u8, 0x23u8,
         ])?;
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::INVON)?; // hack?
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         self.write_command(Instruction::DISPON)?; // Turn on display
-        delay_source.delay_us(10_000).unwrap();
+        delay_source.delay_us(10_000);
         Ok(())
     }
 
@@ -268,11 +173,11 @@ where
     pub fn hard_reset(&mut self, delay_source: &mut impl DelayUs<u32>) -> Result<(), Error<PinE>> {
         if let Some(rst) = self.rst.as_mut() {
             rst.set_high().map_err(Error::Pin)?;
-            delay_source.delay_us(10).unwrap(); // ensure the pin change will get registered
+            delay_source.delay_us(10); // ensure the pin change will get registered
             rst.set_low().map_err(Error::Pin)?;
-            delay_source.delay_us(10).unwrap(); // ensure the pin change will get registered
+            delay_source.delay_us(10); // ensure the pin change will get registered
             rst.set_high().map_err(Error::Pin)?;
-            delay_source.delay_us(10).unwrap(); // ensure the pin change will get registered
+            delay_source.delay_us(10); // ensure the pin change will get registered
         }
 
         Ok(())
@@ -288,7 +193,7 @@ where
                 BacklightState::On => bl.set_high().map_err(Error::Pin)?,
                 BacklightState::Off => bl.set_low().map_err(Error::Pin)?,
             }
-            delay_source.delay_us(10).unwrap(); // ensure the pin change will get registered
+            delay_source.delay_us(10); // ensure the pin change will get registered
         }
         Ok(())
     }
@@ -385,18 +290,18 @@ where
         self.send_data(DataFormat::U8Iter(&mut data.iter().cloned()))
             .map_err(|_| Error::DisplayError)
     }
-    fn send_commands(&mut self, cmds: DataFormat<'_>) -> Result_ {
+    fn send_commands(&mut self, cmds: DataFormat<'_>) -> Result<(), SpiError> {
         // Assert chip select pin
         if let Some(cs) = self.cs.as_mut() {
-            cs.set_low().map_err(|_| DisplayError::CSError)?;
+            cs.set_low().map_err(|_| SpiError::CSError)?;
         }
         // 1 = data, 0 = command
         if let Some(dc) = self.dc.as_mut() {
-            dc.set_low().map_err(|_| DisplayError::DCError)?;
+            dc.set_low().map_err(|_| SpiError::DCError)?;
         }
 
         // Send words over SPI
-        let result = send_u8(&mut self.spi, cmds);
+        let result = self.send_u8(cmds);
         // Deassert chip select pin
         if let Some(cs) = self.cs.as_mut() {
             cs.set_high().ok();
@@ -404,18 +309,18 @@ where
         result
     }
 
-    fn send_data(&mut self, buf: DataFormat<'_>) -> Result_ {
+    fn send_data(&mut self, buf: DataFormat<'_>) -> Result<(), SpiError> {
         // Assert chip select pin
         if let Some(cs) = self.cs.as_mut() {
-            cs.set_low().map_err(|_| DisplayError::CSError)?;
+            cs.set_low().map_err(|_| SpiError::CSError)?;
         }
         // 1 = data, 0 = command
         if let Some(dc) = self.dc.as_mut() {
-            dc.set_high().map_err(|_| DisplayError::DCError)?;
+            dc.set_high().map_err(|_| SpiError::DCError)?;
         }
 
         // Send words over SPI
-        let result = send_u8(&mut self.spi, buf);
+        let result = self.send_u8(buf);
         // Deassert chip select pin
         if let Some(cs) = self.cs.as_mut() {
             cs.set_high().ok();
@@ -452,6 +357,110 @@ where
                 self.write_command(Instruction::TEON)?;
                 self.write_data(&[1])
             }
+        }
+    }
+
+    fn send_u8(&mut self, words: DataFormat<'_>) -> Result<(), SpiError> {
+        match words {
+            DataFormat::U8(slice) => self.spi.write(slice).map_err(|_| SpiError::BusWriteError),
+            DataFormat::U16(slice) => {
+                use byte_slice_cast::*;
+                self.spi
+                    .write(slice.as_byte_slice())
+                    .map_err(|_| SpiError::BusWriteError)
+            }
+            DataFormat::U16LE(slice) => {
+                use byte_slice_cast::*;
+                for v in slice.as_mut() {
+                    *v = v.to_le();
+                }
+                self.spi
+                    .write(slice.as_byte_slice())
+                    .map_err(|_| SpiError::BusWriteError)
+            }
+            DataFormat::U16BE(slice) => {
+                use byte_slice_cast::*;
+                for v in slice.as_mut() {
+                    *v = v.to_be();
+                }
+                self.spi
+                    .write(slice.as_byte_slice())
+                    .map_err(|_| SpiError::BusWriteError)
+            }
+            DataFormat::U8Iter(iter) => {
+                let mut buf = [0; 32];
+                let mut i = 0;
+
+                for v in iter.into_iter() {
+                    buf[i] = v;
+                    i += 1;
+
+                    if i == buf.len() {
+                        self.spi.write(&buf).map_err(|_| SpiError::BusWriteError)?;
+                        i = 0;
+                    }
+                }
+
+                if i > 0 {
+                    self.spi
+                        .write(&buf[..i])
+                        .map_err(|_| SpiError::BusWriteError)?;
+                }
+
+                Ok(())
+            }
+            DataFormat::U16LEIter(iter) => {
+                use byte_slice_cast::*;
+                let mut buf = [0; 32];
+                let mut i = 0;
+
+                for v in iter.map(u16::to_le) {
+                    buf[i] = v;
+                    i += 1;
+
+                    if i == buf.len() {
+                        self.spi
+                            .write(&buf.as_byte_slice())
+                            .map_err(|_| SpiError::BusWriteError)?;
+                        i = 0;
+                    }
+                }
+
+                if i > 0 {
+                    self.spi
+                        .write(&buf[..i].as_byte_slice())
+                        .map_err(|_| SpiError::BusWriteError)?;
+                }
+
+                Ok(())
+            }
+            DataFormat::U16BEIter(iter) => {
+                use byte_slice_cast::*;
+                let mut buf = [0; 64];
+                let mut i = 0;
+                let len = buf.len();
+
+                for v in iter.map(u16::to_be) {
+                    buf[i] = v;
+                    i += 1;
+
+                    if i == len {
+                        self.spi
+                            .write(&buf.as_byte_slice())
+                            .map_err(|_| SpiError::BusWriteError)?;
+                        i = 0;
+                    }
+                }
+
+                if i > 0 {
+                    self.spi
+                        .write(&buf[..i].as_byte_slice())
+                        .map_err(|_| SpiError::BusWriteError)?;
+                }
+
+                Ok(())
+            }
+            _ => Err(SpiError::DataFormatNotImplemented),
         }
     }
 }
