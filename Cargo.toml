@@ -31,9 +31,9 @@ batch = ["heapless", "graphics"]
 [dev-dependencies]
 linux-embedded-hal = "0.3.2"
 rppal = { version="0.13.1", features=["hal"] }
-embedded-graphics ="0.7.1"
+embedded-graphics = "0.7.1"
 local-ip-address = "0.4.4"
-spin_sleep ="1.0"
+spin_sleep = "1.0"
 
 [profile.release]
 opt-level = "z" # Optimize for size.

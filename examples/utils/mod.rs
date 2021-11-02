@@ -2,10 +2,12 @@ use linux_embedded_hal::{
     spidev::{SpiModeFlags, SpidevOptions},
     Spidev,
 };
-use rppal::gpio::{self,Gpio};
-use std::boxed::Box;
-use std::error::Error;
-use std::io;
+use rppal::gpio::{self, Gpio};
+use std::{boxed::Box, error::Error, io};
+pub mod chart;
+pub mod iptext;
+mod enums;
+pub use enums::Pins;
 pub fn create_spi() -> io::Result<Spidev> {
     let mut spi = Spidev::open("/dev/spidev0.0")?;
     let options = SpidevOptions::new()
@@ -17,7 +19,7 @@ pub fn create_spi() -> io::Result<Spidev> {
     spi.configure(&options)?;
     Ok(spi)
 }
-pub fn create_outputpin(pins: [u8; 3]) -> Result<[gpio::OutputPin;3], Box<dyn Error+'static>> {
+pub fn create_outputpin(pins: [u8; 3]) -> Result<[gpio::OutputPin; 3], Box<dyn Error + 'static>> {
     let [rst, bl, dc] = pins;
     Ok([
         Gpio::new()?.get(rst)?.into_output(),
