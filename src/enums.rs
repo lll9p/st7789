@@ -32,6 +32,7 @@ pub enum Instruction {
     VDVVRHEN = 0xC2,
     VRHS = 0xC3,
     VDVS = 0xC4,
+    FRCTRL1 = 0xB3,
     FRCTRL2 = 0xC6,
     PWCTRL1 = 0xD0,
     PVGAMCTRL = 0xE0,

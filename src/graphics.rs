@@ -138,3 +138,21 @@ where
         Size::new(self.size_x.into(), self.size_y.into()) // visible area, not RAM-pixel size
     }
 }
+
+pub trait BlitTarget {
+	type Error;
+
+	fn blit(&mut self, sx: u16, sy: u16, ex: u16, ey: u16, data: &[u8]) -> Result<(), Self::Error>;
+}
+
+impl<SPI, OUT, PinE> BlitTarget for ST7789<SPI, OUT>
+where
+    SPI: spi::Write<u8>,
+    OUT: OutputPin<Error = PinE>,
+{
+	type Error = Error<PinE>;
+
+	fn blit(&mut self, sx: u16, sy: u16, ex: u16, ey: u16, data: &[u8]) -> Result<(), Self::Error> {
+		self.blit_pixels(sx, sy, ex, ey, data)
+	}
+}

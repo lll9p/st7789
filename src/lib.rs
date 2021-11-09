@@ -42,7 +42,7 @@ where
     // Current orientation
     orientation: Orientation,
     x_start: u16, // what row idx to translate 0 to (for 240x240 displays in PortaitSwapped)
-    y_start: u16  // what col idx to translate 0 to (for 240x240 displays in LandscapeSwapped)
+    y_start: u16, // what col idx to translate 0 to (for 240x240 displays in LandscapeSwapped)
 }
 
 // type Result_ = core::result::Result<(), DisplayError>;
@@ -81,8 +81,8 @@ where
             size_x,
             size_y,
             orientation: Orientation::default(),
-            x_start:0,
-            y_start:0,
+            x_start: 0,
+            y_start: 0,
         }
     }
 
@@ -101,7 +101,7 @@ where
             bl.set_high().map_err(Error::Pin)?;
         }
 
-        self.write_command(Instruction::SWRESET)?; // reset display
+        /* self.write_command(Instruction::SWRESET)?; // reset display
         delay_source.delay_us(150_000);
         self.write_command(Instruction::RAMWR)?; // Init ram
         delay_source.delay_us(10_000);
@@ -132,7 +132,7 @@ where
         self.write_command(Instruction::LCMCTRL)?; // LCM Control
         self.write_data(&[0x2Cu8])?;
         delay_source.delay_us(10_000);
-        self.write_command(Instruction::VDVVRHEN)?; // VDV and VRH Command Enable
+        self.write_command(Instruction::VDVVRHEN)?; // VDV and VRH Command Enable reset default, but 2nd data byte missing (default: 0xff)
         self.write_data(&[0x01u8])?;
         delay_source.delay_us(10_000);
         self.write_command(Instruction::VRHS)?; // VRH set
@@ -141,6 +141,9 @@ where
         self.write_command(Instruction::VDVS)?; // VDV SET
         self.write_data(&[0x20u8])?;
         delay_source.delay_us(10_000);
+        /* self.write_command(Instruction::FRCTRL1)?; // Frame Rate Control in Partial Mode
+        self.write_data(&[0x00u8, 0x0Fu8, 0x0Fu8])?;
+        delay_source.delay_us(10_000); */
         self.write_command(Instruction::FRCTRL2)?; // Frame Rate Control in Normal Mode
         self.write_data(&[0x0Fu8])?;
         delay_source.delay_us(10_000);
@@ -162,6 +165,41 @@ where
         self.write_command(Instruction::INVON)?; // hack?
         delay_source.delay_us(10_000);
         self.write_command(Instruction::DISPON)?; // Turn on display
+        delay_source.delay_us(10_000); */
+        // https://github.com/Nitrokey/picolcd114/blob/8bf6d71a95a3492ef337e67e1e54d5cd559fb090/src/lib.rs
+        self.write_command(Instruction::MADCTL)?;
+        self.write_data(&[0x70])?;
+        self.write_command(Instruction::COLMOD)?;
+        self.write_data(&[0x55])?; // 16bpp
+        self.write_command(Instruction::PORCTRL)?;
+        self.write_data(&[0x0c, 0x0c, 0x00, 0x33, 0x33])?; // reset default
+        self.write_command(Instruction::GCTRL)?;
+        self.write_data(&[0x35])?; // reset default
+        self.write_command(Instruction::VCOMS)?;
+        self.write_data(&[0x19])?;
+        self.write_command(Instruction::LCMCTRL)?;
+        self.write_data(&[0x2c])?; // reset default
+        self.write_command(Instruction::VDVVRHEN)?;
+        self.write_data(&[0x01])?; // reset default, but 2nd data byte missing (default: 0xff)
+        self.write_command(Instruction::VRHS)?;
+        self.write_data(&[0x12])?;
+        self.write_command(Instruction::VDVS)?;
+        self.write_data(&[0x20])?; // reset default
+        self.write_command(Instruction::FRCTRL2)?;
+        self.write_data(&[0x0f])?; // reset default
+        self.write_command(Instruction::PWCTRL1)?;
+        self.write_data(&[0xa4, 0xa1])?; // reset default
+        self.write_command(Instruction::PVGAMCTRL)?;
+        self.write_data(&[
+            0xd0, 0x04, 0x0d, 0x11, 0x13, 0x2b, 0x3f, 0x54, 0x4c, 0x18, 0x0d, 0x0b, 0x1f, 0x23,
+        ])?;
+        self.write_command(Instruction::NVGAMCTRL)?;
+        self.write_data(&[
+            0xd0, 0x04, 0x0c, 0x11, 0x13, 0x2c, 0x3f, 0x44, 0x51, 0x2f, 0x1f, 0x1f, 0x20, 0x23,
+        ])?;
+        self.write_command(Instruction::INVON)?;
+        self.write_command(Instruction::SLPOUT)?;
+        self.write_command(Instruction::DISPON)?;
         delay_source.delay_us(10_000);
         Ok(())
     }
@@ -216,16 +254,46 @@ where
         self.write_data(&[orientation as u8])?;
         self.orientation = orientation;
         let (xs, ys) = match (self.size_y, self.orientation) {
-            (_, Orientation::Portrait) => (0,0),  // gap would be at the bottom
-            (_, Orientation::Landscape) => (0,0), // gap would be at the right
+            (_, Orientation::Portrait) => (0, 0), // gap would be at the bottom
+            (_, Orientation::Landscape) => (0, 0), // gap would be at the right
             (sy, Orientation::PortraitSwapped) => (0, 320 - sy),
-            (sy, Orientation::LandscapeSwapped) => (320 - sy, 0)
+            (sy, Orientation::LandscapeSwapped) => (320 - sy, 0),
         };
         self.x_start = xs;
         self.y_start = ys;
         Ok(())
     }
+    ///
+    /// Blits raw pixel data to the display. The burden of choosing the correct
+    /// pixel format is completely on the caller - on the other hand, this is
+    /// probably the only way to get acceptable (or *any*, for that matter)
+    /// DMA performance.
+    ///
+    /// # Arguments
+    ///
+    /// * `sx` - x coordinate start
+    /// * `sy` - y coordinate start
+    /// * `dx` - width
+    /// * `dy` - height
+    /// * `data` - u8 slice containing raw pixel data
+    ///
+    pub fn blit_pixels(
+        &mut self,
+        sx: u16,
+        sy: u16,
+        dx: u16,
+        dy: u16,
+        data: &[u8],
+    ) -> Result<(), Error<PinE>> {
+        use DataFormat::U8;
 
+        if data.len() != (dx * dy * 2) as usize {
+            return Err(Error::DisplayError);
+        }
+        self.set_address_window(sx, sy, sx + dx - 1, sy + dy - 1)?;
+        self.write_command(Instruction::RAMWR)?;
+        self.send_data(U8(data)).map_err(|_| Error::DisplayError)
+    }
     ///
     /// Sets a pixel color at the given coords.
     ///

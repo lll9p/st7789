@@ -1,3 +1,4 @@
+use embedded_graphics::primitives::Rectangle;
 use linux_embedded_hal::{
     spidev::{SpiModeFlags, SpidevOptions},
     Spidev,
@@ -5,9 +6,13 @@ use linux_embedded_hal::{
 use rppal::gpio::{self, Gpio};
 use std::{boxed::Box, error::Error, io};
 pub mod chart;
-pub mod iptext;
 mod enums;
+pub mod iptext;
 pub use enums::Pins;
+pub struct BoundingBoxes {
+    pub ip: Option<Rectangle>,
+    pub chart: Option<Rectangle>,
+}
 pub fn create_spi() -> io::Result<Spidev> {
     let mut spi = Spidev::open("/dev/spidev0.0")?;
     let options = SpidevOptions::new()
